@@ -3,38 +3,40 @@
 #include <bluefruit.h>
 
 #include <Debug.hpp>
-#include <SNESCtrl.hpp>
+#include <SNESctl.hpp>
 
 
 BLEDis bledis;
 BLEHidGamepad blegamepad;
+SoftwareTimer reportTimer;
 
 
 void start_advertising();
 
 
-volatile bool report_needed = false;
-
-
 void setup() {
     Serial.begin(115200);
+
+    // Blocking wait for connection when debug mode is enabled via IDE
     while ( !Serial ) {
         delay(10);
     }
 
     Serial.println("Nice!nano HID (SNES) Gamepad");
-    Serial.println("-------------------------------\n");
+    Serial.println("----------------------------\n");
 
     Serial.println();
     Serial.println("Go to your phone's/laptop's Bluetooth settings to pair this device");
     Serial.println("then open an application that accepts gamepad input");
+    dbgPrintVersion();
+    dbgMemInfo();
 
     SPI.begin();
-    SPI.beginTransaction(SNESCtrl::get_spi_settings());
+    SPI.beginTransaction(SNESctl::get_spi_settings());
 
-    Bluefruit.setName("SNESCtl");
     Bluefruit.begin();
-    Bluefruit.setTxPower(4);    // check bluefruit.h for supported values
+    Bluefruit.setTxPower(4);
+    Bluefruit.setName("SNESctl");
 
     // Configure and Start Device Information Service
     bledis.setManufacturer("DIY Industries");
@@ -54,40 +56,25 @@ void setup() {
      * Note: It is already set by BLEHidAdafruit::begin() to 11.25ms - 15ms
      * min = 9*1.25=11.25 ms, max = 12*1.25= 15 ms
      */
-    /* Bluefruit.Periph.setConnInterval(9, 12); */
     Bluefruit.Periph.setConnInterval(13, 13);   // = 16.25ms <= 16.66ms = 60Hz (refresh rate)
     Bluefruit.Periph.printInfo();
-
-    Bluefruit.Periph.setConnectCallback([](const uint16_t conn_hdl){
-        Serial.println("Connected!");
-        report_needed = true;
-    });
-    Bluefruit.Periph.setDisconnectCallback([](const uint16_t conn_hdl, const uint8_t reason){
-        Serial.printf("Disconnected, reason: %d\n", reason);
-    });
-
-    Bluefruit.setEventCallback([](ble_evt_t* evt){
-        switch (evt->header.evt_id) {
-            case BLE_GATTS_EVT_HVN_TX_COMPLETE:
-                report_needed = true;
-                break;
-        }
-    });
+    Bluefruit.Periph.setConnectCallback([](const uint16_t _){ Serial.println("Connected!"); });
+    Bluefruit.Periph.setDisconnectCallback([](const uint16_t _, const uint8_t reason){ Serial.printf("Disconnected, reason: %d\n", reason); });
 
     start_advertising();
+
+    reportTimer.begin(16, [](TimerHandle_t timer){
+        auto raw_button_pressed = SNESctl::read_raw(&SPI, PIN_002);
+        Debug::print_binary(raw_button_pressed, Serial);
+        auto hid_report = SNESctl::get_gamepad_report_from_raw(raw_button_pressed);
+        auto sent = blegamepad.report(&hid_report);
+        Serial.printf("Report sent: %s\n", sent ? "true" : "false");
+    });
+    reportTimer.start();
 }
 
 void loop() {
-    if (!report_needed || !Bluefruit.Periph.connected()) {
-        return;
-    }
-
-    auto raw_button_pressed = SNESCtrl::read_raw(&SPI, PIN_002);
-    Debug::print_binary(raw_button_pressed, Serial);
-    auto hid_report = SNESCtrl::get_gamepad_report_from_raw(raw_button_pressed);
-    blegamepad.report(&hid_report);
-    report_needed = false;
-    delay(250);
+    waitForEvent();
 }
 
 void start_advertising() {
