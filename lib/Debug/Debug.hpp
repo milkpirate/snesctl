@@ -6,6 +6,7 @@
 
 #include <bluefruit.h>
 
+
 namespace Debug {
     void send_test_buttons_presses(BLEHidGamepad &ble_hid_gp, uint32_t delay, Print &streamer);
     void print_binary(const uint16_t raw_buttons, Print &streamer);

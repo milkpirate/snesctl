@@ -2,20 +2,41 @@
 #include <SPI.h>
 #include <bluefruit.h>
 
-#include <Debug.hpp>
-#include <SNESctl.hpp>
+#include "Debug.hpp"
+#include "Utils.hpp"
+#include "SNESctl.hpp"
+#include "Pin.hpp"
+#include "SPI.hpp"
 
 
-BLEDis bledis;
-BLEHidGamepad blegamepad;
-SoftwareTimer reportTimer;
+namespace {
+    constexpr float adc_v_ref = 3.6f;
+    constexpr uint8_t adc_resolution = 12;
+    constexpr uint16_t adc_scale = (1u << adc_resolution) - 1u;
+    constexpr float vddh_division_factor = 5.0f;
+
+    constexpr float lipo_v_empty = 2.8f;
+    constexpr float lipo_v_full = 4.2f;
+}
+
+
+auto latch = Hardware::Pin(PIN_002);
+
+
+BLEDis ble_dis;
+BLEBas ble_bas;
+BLEHidGamepad ble_gamepad;
+SoftwareTimer report_timer;
+SNESctl::Controller snes_controller(Hardware::SPI,latch, Hardware::NC, Hardware::NC);
 
 
 void start_advertising();
+uint8_t read_battery_percentage();
 
 
 void setup() {
     Serial.begin(115200);
+    analogReadResolution(adc_resolution);
 
     // Blocking wait for connection when debug mode is enabled via IDE
     while ( !Serial ) {
@@ -32,16 +53,19 @@ void setup() {
     dbgMemInfo();
 
     SPI.begin();
-    SPI.beginTransaction(SNESctl::get_spi_settings());
+    SPI.beginTransaction(SNESctl::Controller::get_spi_settings());
 
     Bluefruit.begin();
     Bluefruit.setTxPower(4);
     Bluefruit.setName("SNESctl");
 
     // Configure and Start Device Information Service
-    bledis.setManufacturer("DIY Industries");
-    bledis.setModel("SNESctl");
-    bledis.begin();
+    ble_dis.setManufacturer("DIY Industries");
+    ble_dis.setModel("SNESctl");
+    ble_dis.begin();
+
+    // Configure and Start Battery Service
+    ble_bas.begin();
 
     /* Start BLE HID
      * Note: Apple requires BLE device must have min connection interval >= 20m
@@ -50,27 +74,35 @@ void setup() {
      * up to 11.25 ms. Therefore, BLEHidAdafruit::begin() will try to set the min and max
      * connection interval to 11.25  ms and 15 ms respectively for best performance.
      */
-    blegamepad.begin();
+    ble_gamepad.begin();
 
     /* Set connection interval (min, max) to your perferred value.
      * Note: It is already set by BLEHidAdafruit::begin() to 11.25ms - 15ms
      * min = 9*1.25=11.25 ms, max = 12*1.25= 15 ms
      */
-    Bluefruit.Periph.setConnInterval(13, 13);   // = 16.25ms <= 16.66ms = 60Hz (refresh rate)
+    Bluefruit.Periph.setConnInterval(9, 12);
     Bluefruit.Periph.printInfo();
     Bluefruit.Periph.setConnectCallback([](const uint16_t _){ Serial.println("Connected!"); });
     Bluefruit.Periph.setDisconnectCallback([](const uint16_t _, const uint8_t reason){ Serial.printf("Disconnected, reason: %d\n", reason); });
 
     start_advertising();
 
-    reportTimer.begin(16, [](TimerHandle_t timer){
-        auto raw_button_pressed = SNESctl::read_raw(&SPI, PIN_002);
-        Debug::print_binary(raw_button_pressed, Serial);
-        auto hid_report = SNESctl::get_gamepad_report_from_raw(raw_button_pressed);
-        auto sent = blegamepad.report(&hid_report);
-        Serial.printf("Report sent: %s\n", sent ? "true" : "false");
+    report_timer.begin(16, [](TimerHandle_t timer){
+        static uint8_t last_battery_percent = ~0;
+
+        auto hid_report = snes_controller.get_gamepad_report();
+        Debug::print_binary(0, Serial);  // TODO: Add raw data method to Controller if needed
+        const auto hid_report_sent = ble_gamepad.report(&hid_report);
+        Serial.printf("HID Report sent: %s\n", hid_report_sent ? "true" : "false");
+
+        auto battery_percent = read_battery_percentage();
+        if (battery_percent != last_battery_percent) {
+            const auto battery_sent = ble_bas.notify(battery_percent);
+            Serial.printf("Battery %d%%, sent: %s\n", battery_percent, battery_sent ? "true" : "false");
+            last_battery_percent = battery_percent;
+        }
     });
-    reportTimer.start();
+    report_timer.start();
 }
 
 void loop() {
@@ -82,7 +114,7 @@ void start_advertising() {
     Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
     Bluefruit.Advertising.addTxPower();
     Bluefruit.Advertising.addAppearance(BLE_APPEARANCE_HID_GAMEPAD);
-    Bluefruit.Advertising.addService(blegamepad);
+    Bluefruit.Advertising.addService(ble_gamepad);
     Bluefruit.Advertising.addName();
 
     /* Start Advertising
@@ -103,3 +135,12 @@ void start_advertising() {
     Bluefruit.Advertising.start(120);
 }
 
+uint8_t read_battery_percentage() {
+    // nice!nano v2 uses internal VDDH monitoring via analogReadVDDHDIV5()
+    auto adc_raw = analogReadVDDHDIV5();
+    auto voltage = (static_cast<float>(adc_raw) * adc_v_ref * vddh_division_factor) / adc_scale;
+    // convert voltage to percentage (and saturate to the boundaries).
+    // 2.8V..4.2V -> 0%..100%
+    auto percentage = Utils::map_saturated(voltage, lipo_v_empty, lipo_v_full, 0.0f, 100.0f);
+    return static_cast<uint8_t>(percentage);
+}

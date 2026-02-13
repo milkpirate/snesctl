@@ -4,6 +4,7 @@
 
 #include "Debug.hpp"
 
+
 namespace Debug {
     void send_test_buttons_presses(BLEHidGamepad &hid, uint32_t delay_ms, Print &streamer) {
         streamer.println("No pressing buttons");

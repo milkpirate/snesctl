@@ -1,0 +1,11 @@
+version: "3"
+
+tasks:
+  run:
+    desc: "pio run alias"
+    sources:
+      - 'lib/**'
+      - 'src/**'
+      - 'platformio.ini'
+    cmds:
+      - pio run
