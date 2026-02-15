@@ -20,14 +20,21 @@ namespace Hardware {
         void digitalWrite(uint32_t value) const override { ::digitalWrite(pin_number_, value); }
         bool digitalRead() const override { return ::digitalRead(pin_number_); }
         void digitalToggle() const override { ::digitalToggle(pin_number_); }
-        bool isConnected() const { return true; }
+        bool isConnected() const override { return pin_number_; }
 
     private:
         const uint32_t pin_number_;
     };
 
-    // No-connection sentinel - minimal implementation
-    struct _nc : Interfaces::GPIO{};
-    const _nc NC{};
+    // No-connection sentinel: single instance, uncopyable
+    class nc_ final : public Interfaces::GPIO {
+    public:
+        constexpr nc_() = default;
+        nc_(nc_&&) = delete;
+        nc_& operator=(nc_&&) = delete;
+    private:
+        nc_(const nc_&) = delete;
+        nc_& operator=(const nc_&) = delete;
+    };
+    constexpr nc_ NC{};
 }
-

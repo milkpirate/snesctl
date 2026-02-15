@@ -17,17 +17,29 @@ namespace {
 
     constexpr float lipo_v_empty = 2.8f;
     constexpr float lipo_v_full = 4.2f;
+
+    constexpr Hardware::Pin spi_miso(PIN_002);
+    constexpr Hardware::Pin spi_sck(PIN_002);
+    constexpr Hardware::Pin spi_mosi(PIN_002);
+    constexpr Hardware::Pin latch_pin(PIN_002);
+    constexpr Hardware::Pin vcc_pin(PIN_003);        // white
+    constexpr Hardware::Pin gnd_pin(PIN_004);
 }
-
-
-auto latch = Hardware::Pin(PIN_002);
 
 
 BLEDis ble_dis;
 BLEBas ble_bas;
 BLEHidGamepad ble_gamepad;
 SoftwareTimer report_timer;
-SNESctl::Controller snes_controller(Hardware::SPI,latch, Hardware::NC, Hardware::NC);
+SoftwareTimer battery_timer;
+
+Hardware::SPIAdapter spi_adapter(spi_miso, spi_sck, spi_mosi);
+SNESctl::Controller snes_controller(
+    spi_adapter,
+    latch_pin,
+    vcc_pin,
+    gnd_pin
+);
 
 
 void start_advertising();
@@ -53,7 +65,7 @@ void setup() {
     dbgMemInfo();
 
     SPI.begin();
-    SPI.beginTransaction(SNESctl::Controller::get_spi_settings());
+    SPI.beginTransaction(SNESctl::Controller::getSPISettings());
 
     Bluefruit.begin();
     Bluefruit.setTxPower(4);
@@ -82,27 +94,32 @@ void setup() {
      */
     Bluefruit.Periph.setConnInterval(9, 12);
     Bluefruit.Periph.printInfo();
-    Bluefruit.Periph.setConnectCallback([](const uint16_t _){ Serial.println("Connected!"); });
+    Bluefruit.Periph.setConnectCallback([](const uint16_t _){
+        Serial.println("Connected!");
+        ble_bas.notify(read_battery_percentage());
+    });
     Bluefruit.Periph.setDisconnectCallback([](const uint16_t _, const uint8_t reason){ Serial.printf("Disconnected, reason: %d\n", reason); });
 
     start_advertising();
 
     report_timer.begin(16, [](TimerHandle_t timer){
-        static uint8_t last_battery_percent = ~0;
-
-        auto hid_report = snes_controller.get_gamepad_report();
-        Debug::print_binary(0, Serial);  // TODO: Add raw data method to Controller if needed
+        auto hid_report = snes_controller.getGamepadReport();
+        snes_controller.printButtons(Serial);
         const auto hid_report_sent = ble_gamepad.report(&hid_report);
         Serial.printf("HID Report sent: %s\n", hid_report_sent ? "true" : "false");
-
-        auto battery_percent = read_battery_percentage();
-        if (battery_percent != last_battery_percent) {
-            const auto battery_sent = ble_bas.notify(battery_percent);
-            Serial.printf("Battery %d%%, sent: %s\n", battery_percent, battery_sent ? "true" : "false");
-            last_battery_percent = battery_percent;
-        }
     });
+
+    battery_timer.begin(10000, [](TimerHandle_t timer){
+        static uint8_t last_battery_percent = ~0;
+        auto battery_percent = read_battery_percentage();
+        if (battery_percent == last_battery_percent) return;  // only send update if percentage changed
+        const auto battery_sent = ble_bas.notify(battery_percent);
+        last_battery_percent = battery_percent;
+        Serial.printf("Battery %d%%, sent: %s\n", battery_percent, battery_sent ? "true" : "false");
+    });
+
     report_timer.start();
+    battery_timer.start();
 }
 
 void loop() {

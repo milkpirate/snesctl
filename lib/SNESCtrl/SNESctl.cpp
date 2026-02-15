@@ -21,18 +21,18 @@ namespace SNESctl {
     {
         if (vcc_.isConnected()) {
             vcc_.pinMode(OUTPUT);
-            vcc_.digitalWrite(HIGH);
+            vcc_ = HIGH;
         }
         if (gnd_.isConnected()) {
             gnd_.pinMode(OUTPUT);
-            gnd_.digitalWrite(LOW);
+            gnd_ = LOW;
         }
 
         latch_.pinMode(OUTPUT);
-        latch_.digitalWrite(LOW);
+        latch_ = LOW;
     }
 
-    const SPISettings Controller::get_spi_settings() {
+    const SPISettings Controller::getSPISettings() {
         static const SPISettings settings(
                 500000,         // 500 kHz, SNES original 100 kHz
                 LSBFIRST,
@@ -41,11 +41,11 @@ namespace SNESctl {
         return settings;
     }
 
-    hid_gamepad_report_t Controller::get_gamepad_report() const {
-        return this->get_gamepad_report_from_raw_(this->read_raw_());
+    hid_gamepad_report_t Controller::getGamepadReport() const {
+        return this->getGamepadReportFromRaw_(this->readRaw_());
     }
 
-    hid_gamepad_report_t Controller::get_gamepad_report_from_raw_(const uint16_t spi_raw) const {
+    hid_gamepad_report_t Controller::getGamepadReportFromRaw_(const uint16_t spi_raw) const {
         auto raw = ~spi_raw;     // inverted logic
         hid_gamepad_report_t gp{};
 
@@ -73,18 +73,43 @@ namespace SNESctl {
         return gp;
     }
 
-    uint16_t Controller::read_raw_() const {
+    void Controller::printButtons(Print& streamer) const {
+        auto raw_buttons = this->readRaw_();
+        raw_buttons = ~raw_buttons; // invert logic for easier visualization (pressed -> 1, not pressed -> 0)
+
+        streamer.printf("BYSsudlrAXLR____\n");
+        for (int i=0; i<16; ++i) {
+            auto pressed = bitRead(raw_buttons, i);
+            auto symbol = pressed ? "_" : "█";
+            streamer.print(symbol);
+        }
+        streamer.println();
+    }
+
+    uint16_t Controller::readRaw_() const {
         constexpr uint8_t reset_time = 10;     // µs
         constexpr uint8_t stabilize_time = 20;  // µs
 
-        latch_.digitalWrite(HIGH);
+        if(vcc_.isConnected()) {
+            vcc_ = HIGH;
+        }
+        if(gnd_.isConnected()) {
+            gnd_ = LOW;
+        }
+
+        latch_ = HIGH;
         delayMicroseconds(stabilize_time);
-        latch_.digitalWrite(LOW);
+        latch_ = LOW;
         delayMicroseconds(reset_time);  // ensure CD4021 timing @ 3v3
 
-        this->spi_.beginTransaction(get_spi_settings());
+        this->spi_.beginTransaction(this->getSPISettings());
         uint16_t result = this->spi_.transfer16(0x0000);
         this->spi_.endTransaction();
+
+        if(vcc_.isConnected()) {
+            vcc_ = LOW;
+        }
+
         return result;
     }
 }
