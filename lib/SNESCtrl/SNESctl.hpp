@@ -4,33 +4,37 @@
 
 #pragma once
 
+#include <bitset>
 #include <bluefruit.h>
-
-#include "Interfaces.hpp"
-#include "Pin.hpp"
 
 
 namespace SNESctl {
 
-class Controller : public Interfaces::GamepadReporter {
+class Controller {
     public:
-        Controller(
-            Interfaces::SPI& spi,
-            const Interfaces::GPIO& latch,
-            const Interfaces::GPIO& vcc = Hardware::NC,
-            const Interfaces::GPIO& gnd = Hardware::NC
-        );
-        hid_gamepad_report_t getGamepadReport() const override;
-        void printButtons(Print& streamer) const override;
-        const static SPISettings getSPISettings();
+        static void printRawButtons(Print& streamer, const uint16_t raw);
+        static void printReport(Print& streamer, const hid_gamepad_report_t& report);
+
+        Controller(SPIClass& spi, const uint32_t latch, const uint32_t vcc, const uint32_t gnd);
+
+        void begin() const;
+        void powerOff() const;
+        void powerOn() const;
+
+        hid_gamepad_report_t getGamepadReport() const;
+        uint16_t readRaw() const;
 
     private:
-        hid_gamepad_report_t getGamepadReportFromRaw_(const uint16_t raw) const;
-        uint16_t readRaw_() const;
+        SPIClass& spi_;
 
-        Interfaces::SPI& spi_;
-        const Interfaces::GPIO& latch_;
-        const Interfaces::GPIO& vcc_;
-        const Interfaces::GPIO& gnd_;
+        const uint32_t latch_;
+        const uint32_t vcc_;
+        const uint32_t gnd_;
+
+        const SPISettings spiSettings_{
+            100000,     // SNES controller clock (100 kHz max)
+            LSBFIRST,   // SNES sends LSB first
+            SPI_MODE0   // CPOL=0 (clock is idle low), CPHA=0 (data is read on rising edge)
+        };
     };
 }

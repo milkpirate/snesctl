@@ -6,7 +6,7 @@
 
 
 namespace Debug {
-    void send_test_buttons_presses(BLEHidGamepad &hid, uint32_t delay_ms, Print &streamer) {
+    void send_test_buttons_presses(BLEHidGamepad &hid, const uint32_t delay_ms, Print &streamer) {
         streamer.println("No pressing buttons");
         hid_gamepad_report_t gp;
         hid.report(&gp);
@@ -178,15 +178,7 @@ namespace Debug {
         hid.report(&gp);
         delay(delay_ms);
     }
-    void print_binary(const uint16_t raw_buttons, Print &streamer) {
-        streamer.printf("[%010d] BYSsudlrAXLR____\n", millis());
-        streamer.printf("             ");
-        for (int i=0; i<16; ++i) {
-            streamer.print(bitRead(raw_buttons, i) ? "_" : "█");
-        }
-        streamer.println();
-    }
-    void print_gatt_event(uint16_t id, Print &streamer) {
+    void print_gatt_event(const uint16_t id, Print &streamer) {
         switch (id) {
             case BLE_GATTS_EVT_WRITE:
                 streamer.println("BLE_GATTS_EVT_WRITE, Write operation performed.");

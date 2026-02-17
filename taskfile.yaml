@@ -1,6 +1,11 @@
 version: "3"
 
 tasks:
+  .pio:
+    internal: true
+    cmds:
+      - pio {{ .args }}
+
   run:
     desc: "pio run alias"
     sources:
@@ -8,4 +13,15 @@ tasks:
       - 'src/**'
       - 'platformio.ini'
     cmds:
-      - pio run
+      - task: .pio
+        vars:
+          args: run
+
+  upload:
+    desc: "pio run alias"
+    cmds:
+      - task: run
+      - task: .pio
+        vars:
+          args: run -t upload
+

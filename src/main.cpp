@@ -1,29 +1,33 @@
 #include <Arduino.h>
 #include <SPI.h>
+
 #include <bluefruit.h>
 
-#include "Debug.hpp"
 #include "Utils.hpp"
 #include "SNESctl.hpp"
-#include "Pin.hpp"
-#include "SPI.hpp"
+#include "Debug.hpp"
 
+namespace Config {
+    namespace Battery {
+        constexpr auto adc_v_ref = 3.6f;
+        constexpr uint8_t adc_resolution = 12;
+        constexpr uint16_t adc_scale = (1u << adc_resolution) - 1u;
+        constexpr auto vddh_division_factor = 5.0f;
 
-namespace {
-    constexpr float adc_v_ref = 3.6f;
-    constexpr uint8_t adc_resolution = 12;
-    constexpr uint16_t adc_scale = (1u << adc_resolution) - 1u;
-    constexpr float vddh_division_factor = 5.0f;
+        constexpr auto lipo_v_empty = 2.8f;
+        constexpr auto lipo_v_full = 4.2f;
+    }
 
-    constexpr float lipo_v_empty = 2.8f;
-    constexpr float lipo_v_full = 4.2f;
+    namespace Pins {
+        constexpr auto spi_mosi = PIN_113;  // unused
 
-    constexpr Hardware::Pin spi_miso(PIN_002);
-    constexpr Hardware::Pin spi_sck(PIN_002);
-    constexpr Hardware::Pin spi_mosi(PIN_002);
-    constexpr Hardware::Pin latch_pin(PIN_002);
-    constexpr Hardware::Pin vcc_pin(PIN_003);        // white
-    constexpr Hardware::Pin gnd_pin(PIN_004);
+        constexpr auto spi_sck = PIN_031;   // blue
+        constexpr auto spi_miso = PIN_002;  // red
+        constexpr auto latch = PIN_029;     // yellow
+
+        constexpr auto ctl_vcc = PIN_013;   // white
+        constexpr auto ctl_gnd = PIN_115;   // brown
+    }
 }
 
 
@@ -33,28 +37,37 @@ BLEHidGamepad ble_gamepad;
 SoftwareTimer report_timer;
 SoftwareTimer battery_timer;
 
-Hardware::SPIAdapter spi_adapter(spi_miso, spi_sck, spi_mosi);
+SPIClass spi(
+    NRF_SPIM3,
+    Config::Pins::spi_miso,
+    Config::Pins::spi_sck,
+    Config::Pins::spi_mosi
+);
 SNESctl::Controller snes_controller(
-    spi_adapter,
-    latch_pin,
-    vcc_pin,
-    gnd_pin
+    spi,
+    Config::Pins::latch,
+    Config::Pins::ctl_vcc,
+    Config::Pins::ctl_gnd
 );
 
 
+bool connected = false;
+bool battery_sent = false;
+
+
 void start_advertising();
+float read_battery_voltage();
 uint8_t read_battery_percentage();
 
 
 void setup() {
     Serial.begin(115200);
-    analogReadResolution(adc_resolution);
+    analogReadResolution(Config::Battery::adc_resolution);
 
     // Blocking wait for connection when debug mode is enabled via IDE
     while ( !Serial ) {
         delay(10);
     }
-
     Serial.println("Nice!nano HID (SNES) Gamepad");
     Serial.println("----------------------------\n");
 
@@ -63,9 +76,6 @@ void setup() {
     Serial.println("then open an application that accepts gamepad input");
     dbgPrintVersion();
     dbgMemInfo();
-
-    SPI.begin();
-    SPI.beginTransaction(SNESctl::Controller::getSPISettings());
 
     Bluefruit.begin();
     Bluefruit.setTxPower(4);
@@ -95,27 +105,53 @@ void setup() {
     Bluefruit.Periph.setConnInterval(9, 12);
     Bluefruit.Periph.printInfo();
     Bluefruit.Periph.setConnectCallback([](const uint16_t _){
+        connected = true;
         Serial.println("Connected!");
-        ble_bas.notify(read_battery_percentage());
+        battery_sent = ble_bas.notify(read_battery_percentage());
     });
-    Bluefruit.Periph.setDisconnectCallback([](const uint16_t _, const uint8_t reason){ Serial.printf("Disconnected, reason: %d\n", reason); });
+    Bluefruit.Periph.setDisconnectCallback([](const uint16_t _, const uint8_t reason){
+        connected = false;
+        Serial.printf("Disconnected, reason: %d\n", reason);
+    });
 
+    spi.begin();
+    pinMode(Config::Pins::spi_mosi, INPUT); // unused, but set to input to avoid driving the line
+
+    snes_controller.begin();
     start_advertising();
 
+
     report_timer.begin(16, [](TimerHandle_t timer){
-        auto hid_report = snes_controller.getGamepadReport();
-        snes_controller.printButtons(Serial);
+        hid_gamepad_report_t hid_report = snes_controller.getGamepadReport();
         const auto hid_report_sent = ble_gamepad.report(&hid_report);
-        Serial.printf("HID Report sent: %s\n", hid_report_sent ? "true" : "false");
+#ifdef DEBUG_HID_REPORT
+        SNESctl::Controller::printRawButtons(Serial, snes_controller.readRaw());
+        SNESctl::Controller::printReport(Serial, hid_report);
+        Serial.printf(
+                "HID report sent: %s, connected %s\n",
+                hid_report_sent ? "true" : "false",
+                connected ? "true" : "false"
+        );
+#endif
     });
 
-    battery_timer.begin(10000, [](TimerHandle_t timer){
+    battery_timer.begin(60 * 1000, [](TimerHandle_t timer){
         static uint8_t last_battery_percent = ~0;
         auto battery_percent = read_battery_percentage();
-        if (battery_percent == last_battery_percent) return;  // only send update if percentage changed
-        const auto battery_sent = ble_bas.notify(battery_percent);
+        // send update if percentage changed, or we haven't sent the current percentage yet (e.g. on first connection)
+        if (battery_percent == last_battery_percent && battery_sent) return;
+        battery_sent = ble_bas.notify(battery_percent);
         last_battery_percent = battery_percent;
-        Serial.printf("Battery %d%%, sent: %s\n", battery_percent, battery_sent ? "true" : "false");
+
+#ifdef DEBUG_BATTERY_REPORT
+        Serial.printf(
+            "Battery %d%% (%.02fV), sent: %s, connected %s\n",
+            battery_percent,
+            read_battery_voltage(),
+            battery_sent ? "true" : "false",
+            connected ? "true" : "false"
+        );
+#endif
     });
 
     report_timer.start();
@@ -152,12 +188,26 @@ void start_advertising() {
     Bluefruit.Advertising.start(120);
 }
 
-uint8_t read_battery_percentage() {
+float read_battery_voltage() {
     // nice!nano v2 uses internal VDDH monitoring via analogReadVDDHDIV5()
     auto adc_raw = analogReadVDDHDIV5();
-    auto voltage = (static_cast<float>(adc_raw) * adc_v_ref * vddh_division_factor) / adc_scale;
+    return (
+        static_cast<float>(adc_raw)
+        * Config::Battery::adc_v_ref
+        * Config::Battery::vddh_division_factor
+    ) / Config::Battery::adc_scale;
+}
+
+uint8_t read_battery_percentage() {
+    auto voltage = read_battery_voltage();
     // convert voltage to percentage (and saturate to the boundaries).
     // 2.8V..4.2V -> 0%..100%
-    auto percentage = Utils::map_saturated(voltage, lipo_v_empty, lipo_v_full, 0.0f, 100.0f);
+    auto percentage = Utils::map_saturated(
+        voltage,
+        Config::Battery::lipo_v_empty,
+        Config::Battery::lipo_v_full,
+        0.0f,
+        100.0f
+    );
     return static_cast<uint8_t>(percentage);
 }

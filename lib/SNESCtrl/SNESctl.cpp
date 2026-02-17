@@ -9,44 +9,79 @@
 
 namespace SNESctl {
     Controller::Controller(
-        Interfaces::SPI& spi,
-        const Interfaces::GPIO& latch,
-        const Interfaces::GPIO& vcc,
-        const Interfaces::GPIO& gnd
+        SPIClass& spi,
+        const uint32_t latch,
+        const uint32_t vcc,
+        const uint32_t gnd
     ) :
         spi_(spi),
         latch_(latch),
         vcc_(vcc),
         gnd_(gnd)
-    {
-        if (vcc_.isConnected()) {
-            vcc_.pinMode(OUTPUT);
-            vcc_ = HIGH;
-        }
-        if (gnd_.isConnected()) {
-            gnd_.pinMode(OUTPUT);
-            gnd_ = LOW;
-        }
+    {}
 
-        latch_.pinMode(OUTPUT);
-        latch_ = LOW;
+    void Controller::begin() const {
+        this->powerOff();
     }
 
-    const SPISettings Controller::getSPISettings() {
-        static const SPISettings settings(
-                500000,         // 500 kHz, SNES original 100 kHz
-                LSBFIRST,
-                SPI_MODE2   // glitches? try MODE3
+    void Controller::powerOff() const {
+        pinMode(this->vcc_, INPUT);
+        pinMode(this->gnd_, INPUT);
+        pinMode(this->latch_, INPUT);
+    }
+
+    void Controller::powerOn() const {
+        pinMode(this->vcc_, OUTPUT);
+        pinMode(this->gnd_, OUTPUT);
+        pinMode(this->latch_, OUTPUT);
+
+        digitalWrite(this->vcc_, HIGH);
+        digitalWrite(this->gnd_, LOW);
+        digitalWrite(this->latch_, LOW);
+    }
+
+    void Controller::printRawButtons(Print& streamer, const uint16_t raw) {
+        const auto raw_buttons = ~raw; // invert logic for easier visualization (pressed -> 1, not pressed -> 0)
+        // button order in raw data (Start, Y, Select, B, L, R, X, A, Up, Down, Left, Right)
+        constexpr char letters[] = "BYSsudlrAXLR####";
+        for (int i=0; i<(sizeof letters - 1); ++i) {
+            const auto pressed = bitRead(raw_buttons, i);
+            const auto symbol = pressed ? letters[i] : '_';
+            streamer.print(symbol);
+        }
+        streamer.printf(" (0x%04hx)\n", raw_buttons);
+    }
+
+    void Controller::printReport(Print& streamer, const hid_gamepad_report_t& report) {
+        streamer.printf(
+            "HID report: x=%4d, y=%4d, z=%4d, rx=%4d, ry=%4d, rz=%4d, hat=%4d, buttons=%s\n",
+            report.x, report.y, report.z, report.rx, report.ry, report.rz, report.hat,
+            std::bitset<32>(report.buttons).to_string().c_str()
         );
-        return settings;
+    }
+
+    uint16_t Controller::readRaw() const {
+        constexpr uint8_t latch_pulse_us = 12;  // µs - SNES spec requires ~12µs latch pulse
+        constexpr uint8_t setup_time_us = 10;   // µs - time after latch falls before first clock
+
+        this->powerOn();
+        delayMicroseconds(setup_time_us);   // let all voltage lines settle before latching
+
+        digitalWrite(this->latch_, HIGH);
+        delayMicroseconds(latch_pulse_us);
+        digitalWrite(this->latch_, LOW);
+        delayMicroseconds(setup_time_us);   // ensure CD4021 timing @ 3v3
+
+        this->spi_.beginTransaction(this->spiSettings_);
+        auto result = this->spi_.transfer16(0x0000);
+        this->spi_.endTransaction();
+
+        this->powerOff();
+        return result;
     }
 
     hid_gamepad_report_t Controller::getGamepadReport() const {
-        return this->getGamepadReportFromRaw_(this->readRaw_());
-    }
-
-    hid_gamepad_report_t Controller::getGamepadReportFromRaw_(const uint16_t spi_raw) const {
-        auto raw = ~spi_raw;     // inverted logic
+        auto raw = ~this->readRaw();     // inverted logic
         hid_gamepad_report_t gp{};
 
         constexpr uint16_t sSYB_button_mask = 0b0000000000001111;   // Start, Select, Y, B
@@ -71,45 +106,5 @@ namespace SNESctl {
         gp.x = get_axis(dpad & left, dpad & right);
         gp.y = get_axis(dpad & up,   dpad & down);    // origin -> upper left
         return gp;
-    }
-
-    void Controller::printButtons(Print& streamer) const {
-        auto raw_buttons = this->readRaw_();
-        raw_buttons = ~raw_buttons; // invert logic for easier visualization (pressed -> 1, not pressed -> 0)
-
-        streamer.printf("BYSsudlrAXLR____\n");
-        for (int i=0; i<16; ++i) {
-            auto pressed = bitRead(raw_buttons, i);
-            auto symbol = pressed ? "_" : "█";
-            streamer.print(symbol);
-        }
-        streamer.println();
-    }
-
-    uint16_t Controller::readRaw_() const {
-        constexpr uint8_t reset_time = 10;     // µs
-        constexpr uint8_t stabilize_time = 20;  // µs
-
-        if(vcc_.isConnected()) {
-            vcc_ = HIGH;
-        }
-        if(gnd_.isConnected()) {
-            gnd_ = LOW;
-        }
-
-        latch_ = HIGH;
-        delayMicroseconds(stabilize_time);
-        latch_ = LOW;
-        delayMicroseconds(reset_time);  // ensure CD4021 timing @ 3v3
-
-        this->spi_.beginTransaction(this->getSPISettings());
-        uint16_t result = this->spi_.transfer16(0x0000);
-        this->spi_.endTransaction();
-
-        if(vcc_.isConnected()) {
-            vcc_ = LOW;
-        }
-
-        return result;
     }
 }
