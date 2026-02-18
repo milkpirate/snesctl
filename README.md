@@ -1,6 +1,8 @@
 # SNESctl (`sˈnɛʃtəl`)
 ![GitHub License](https://img.shields.io/github/license/milkpirate/anycubic-buildroot)
 
+<img src="docs/logo.png" alt="logo" width="50%"/>
+
 Retrofit old SNES controllers with Bluetooth connectivity using the low power NRF52840 microcontroller.
 
 This project uses the NRF52840 based [nice!nano] with the Adafruit
@@ -20,10 +22,15 @@ The controller can be connected to the microcontroller however it is convenient.
 More details on the [nice!nano] and alternatives can be found in this repo: [nrfmicro].
 
 ## Software
-The software is written in C++ using the Arduino framework via platformio.
+The software is written in C++ using the Arduino framework via PlatformIO, with the 
+[Nicenano-NRF52-Supermini-PlatformIO-Support](https://github.com/ICantMakeThings/Nicenano-NRF52-Supermini-PlatformIO-Support).
+
 ```bash
 pio run -t upload   # will build and flash the code
 ```
+
+## Documentation
+For pinouts and timing diagrams please have a look at the [docs](./docs).
 
 > NOTE: There are two switches to debug, namely `DEBUG_HID_REPORT` and `DEBUG_BATTERY_REPORT`. Please
 > have a look at the [platformio.ini](./platformio.ini) for more details.

@@ -1,10 +1,25 @@
 version: "3"
 
+vars:
+  nicenano_borad_definitions_url: https://github.com/ICantMakeThings/Nicenano-NRF52-Supermini-PlatformIO-Support/archive/refs/heads/main.tar.gz
+
 tasks:
   .pio:
     internal: true
     cmds:
-      - pio {{ .args }}
+      - uv run pio {{ .args }}
+
+  setup:
+    desc: "Setup development environment"
+    status:
+      - test -f .platformio_core/platforms/nordicnrf52/boards/nicenano.json
+    cmds:
+      - uv run pio pkg install -e dummy
+      - curl -L {{ .nicenano_borad_definitions_url }}
+        | tar -vxz -C .platformio_core/ --strip-components=2 --wildcards '*main/.platformio/*'
+      - task: .pio
+        vars:
+          args: pkg install
 
   run:
     desc: "pio run alias"
