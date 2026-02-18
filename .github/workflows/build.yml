@@ -21,8 +21,14 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
+      - name: Install dependencies
+        run: task setup
+
+      - name: Build firmware
+        run: task run
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v6
         with:
           name: snesctl-firmware
-          path: .pio\build\nicenano\firmware.*
+          path: .pio/build/nicenano/firmware.*

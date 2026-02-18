@@ -1,7 +1,8 @@
 # SNESctl (`sˈnɛʃtəl`)
 ![GitHub License](https://img.shields.io/github/license/milkpirate/anycubic-buildroot)
 
-<img src="docs/logo.png" alt="logo" width="50%"/>
+<img src="docs/logo.png" alt="logo" height=200/>
+<img src="docs/bt.png" alt="logo" height=200/>
 
 Retrofit old SNES controllers with Bluetooth connectivity using the low power NRF52840 microcontroller.
 
