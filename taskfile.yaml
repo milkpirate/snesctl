@@ -5,14 +5,16 @@ vars:
 
 tasks:
   .pio:
+    desc: Run a PlatformIO command wrapper
     internal: true
     cmds:
       - uv run pio {{ .args }}
 
   setup:
-    desc: "Setup development environment"
+    desc: Setup development environment
     status:
       - test -f .platformio_core/platforms/nordicnrf52/boards/nicenano.json
+      - test -d .pio/libdeps/dummy
     cmds:
       - uv run pio pkg install -e dummy
       - curl -L {{ .nicenano_borad_definitions_url }}
@@ -22,18 +24,22 @@ tasks:
           args: pkg install
 
   run:
-    desc: "pio run alias"
+    desc: Build the project
+    # will only build if there are changes in the source files or platformio.ini
     sources:
       - 'lib/**'
       - 'src/**'
       - 'platformio.ini'
+    generates:
+      - .pio/build/nicenano/firmware.elf
     cmds:
+      - task: setup
       - task: .pio
         vars:
           args: run
 
   upload:
-    desc: "pio run alias"
+    desc: Upload the project to the device
     cmds:
       - task: run
       - task: .pio

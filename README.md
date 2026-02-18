@@ -22,21 +22,33 @@ The controller can be connected to the microcontroller however it is convenient.
 More details on the [nice!nano] and alternatives can be found in this repo: [nrfmicro].
 
 ## Software
-The software is written in C++ using the Arduino framework via PlatformIO, with the 
-[Nicenano-NRF52-Supermini-PlatformIO-Support](https://github.com/ICantMakeThings/Nicenano-NRF52-Supermini-PlatformIO-Support).
+The software is written in C++ using the Adafruits Arduino framework [Adafruit_nRF52_Arduino] via PlatformIO, with the 
+[Nicenano-NRF52-Supermini-PlatformIO-Support] (sadly this one is a bit complicated to install, hence the `dummy` 
+environment in the [`platformio.ini`]).
 
+### Requirements
+- [`task`](https://taskfile.dev/docs/installation) - modern `make` alternative for building and running tasks.
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) - modern Python environment and package manager.
+
+### Building and flashing
 ```bash
-pio run -t upload   # will build and flash the code
+task setup    # will will PlatformIO, require dependencies and the board definitions for nicenano 
+task upload   # will build and flash the firmware to the device
 ```
 
 ## Documentation
 For pinouts and timing diagrams please have a look at the [docs](./docs).
 
 > NOTE: There are two switches to debug, namely `DEBUG_HID_REPORT` and `DEBUG_BATTERY_REPORT`. Please
-> have a look at the [platformio.ini](./platformio.ini) for more details.
-
-[nice!nano]: https://nicekeyboards.com/nice-nano/
-[nrfmicro]: https://github.com/joric/nrfmicro/wiki/Alternatives
+> have a look at the [`platformio.ini`] for more details.
 
 ## Credits
 _Image [SNES Controller](https://commons.wikimedia.org/wiki/File:SNES-controller.png) by Magnus Överengen, [CC0](https://creativecommons.org/publicdomain/zero/1.0/deed.en), via Wikimedia Commons_
+
+[`platformio.ini`]: ./platformio.ini
+
+[nice!nano]: https://nicekeyboards.com/nice-nano/
+[nrfmicro]: https://github.com/joric/nrfmicro/wiki/Alternatives
+[Adafruit_nRF52_Arduino]: https://github.com/adafruit/Adafruit_nRF52_Arduino
+[Nicenano-NRF52-Supermini-PlatformIO-Support]: https://github.com/ICantMakeThings/Nicenano-NRF52-Supermini-PlatformIO-Support
+
