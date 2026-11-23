@@ -1,37 +1,54 @@
 version: "3"
 
 vars:
-  nicenano_borad_definitions_url: https://github.com/ICantMakeThings/Nicenano-NRF52-Supermini-PlatformIO-Support/archive/refs/heads/main.tar.gz
+  # nice!nano board definition and variant (pinout). Downloaded instead of kept in this repo,
+  # as they come without a license. Pinned to a commit, updated by Renovate.
+  # renovate: datasource=git-refs depName=https://github.com/ICantMakeThings/Nicenano-NRF52-Supermini-PlatformIO-Support branch=main
+  NICENANO_REF: b0c15d422f846d5f1fb4b4195ff2f08015f3d236
+  NICENANO_URL: https://raw.githubusercontent.com/ICantMakeThings/Nicenano-NRF52-Supermini-PlatformIO-Support/{{ .NICENANO_REF }}/.platformio
 
 tasks:
   .pio:
     desc: Run a PlatformIO command wrapper
     internal: true
     cmds:
-      - uv run pio {{ .args }}
+      - uv run pio {{ .args }} {{ .CLI_ARGS }}
 
   setup:
-    desc: Setup development environment
+    desc: Setup development environment (PlatformIO, platforms, toolchains, frameworks and nice!nano board)
+    deps: [board]
     status:
-      - test -f .platformio_core/platforms/nordicnrf52/boards/nicenano.json
-      - test -d .pio/libdeps/dummy
+      - test -d .platformio_core/packages/framework-arduinoadafruitnrf52
+      - test -d .platformio_core/platforms/native
     cmds:
-      - uv run pio pkg install -e dummy
-      - curl -L {{ .nicenano_borad_definitions_url }}
-        | tar -vxz -C .platformio_core/ --strip-components=2 --wildcards '*main/.platformio/*'
-      - task: .pio
-        vars:
-          args: pkg install
+      - uv sync
+      - uv run pio pkg install -e nicenano -e native
+
+  board:
+    desc: Download the nice!nano board definition and variant (pinout)
+    status:
+      # re-download when the pinned commit changes
+      - test "$(cat boards/.ref 2>/dev/null)" = "{{ .NICENANO_REF }}"
+    cmds:
+      - mkdir -p boards variants/nicenano
+      - curl -fsSL -o boards/nicenano.json {{ .NICENANO_URL }}/platforms/nordicnrf52/boards/nicenano.json
+      - curl -fsSL -o variants/nicenano/variant.h {{ .NICENANO_URL }}/packages/framework-arduinoadafruitnrf52/variants/nicenano/variant.h
+      - curl -fsSL -o variants/nicenano/variant.cpp {{ .NICENANO_URL }}/packages/framework-arduinoadafruitnrf52/variants/nicenano/variant.cpp
+      - echo "{{ .NICENANO_REF }}" > boards/.ref
 
   run:
-    desc: Build the project
+    desc: Build the firmware (.hex, .zip and .uf2)
     # will only build if there are changes in the source files or platformio.ini
     sources:
+      - 'boards/**'
       - 'lib/**'
+      - 'scripts/**'
       - 'src/**'
+      - 'variants/**'
       - 'platformio.ini'
     generates:
       - .pio/build/nicenano/firmware.elf
+      - .pio/build/nicenano/firmware.uf2
     cmds:
       - task: setup
       - task: .pio
@@ -39,10 +56,44 @@ tasks:
           args: run
 
   upload:
-    desc: Upload the project to the device
+    desc: Upload the firmware to the device (via USB serial)
     cmds:
       - task: run
       - task: .pio
         vars:
           args: run -t upload
 
+  test:
+    desc: Run the unit tests on the host (needs a host C++ compiler, e.g. gcc)
+    cmds:
+      - task: setup
+      - task: .pio
+        vars:
+          args: test -e native
+
+  monitor:
+    desc: Open the serial monitor of the device
+    cmds:
+      - task: .pio
+        vars:
+          args: device monitor
+
+  debug:
+    desc: Build a debug firmware and start a GDB session (needs a J-Link)
+    interactive: true
+    cmds:
+      - task: setup
+      - task: .pio
+        vars:
+          args: debug --interface=gdb -- -x .pioinit
+
+  clean:
+    desc: Remove the build artifacts
+    cmds:
+      - uv run pio run -t clean -e nicenano -e native
+      - rm -rf .task
+
+  clean:all:
+    desc: Remove everything generated, incl. PlatformIO and the Python environment
+    cmds:
+      - rm -rf .pio .task .platformio_core .venv

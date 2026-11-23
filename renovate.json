@@ -1,0 +1,49 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "timezone": "Europe/Berlin",
+  "schedule": [
+    "* 0-5 * * *"
+  ],
+  "automergeSchedule": [
+    "* 0-5 * * *"
+  ],
+  "packageRules": [
+    {
+      "description": "Automerge non-major updates (once the CI passed)",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "automerge": true
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Catch2 version used by the host unit tests",
+      "managerFilePatterns": [
+        "/^test/test_custom_runner\\.py$/"
+      ],
+      "matchStrings": [
+        "CATCH2_VERSION = \"(?<currentValue>v[^\"]+)\""
+      ],
+      "depNameTemplate": "catchorg/Catch2",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "nice!nano board definition and variant, pinned to a commit",
+      "managerFilePatterns": [
+        "/^taskfile\\.yaml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+) branch=(?<currentValue>\\S+)\\s+\\w+: (?<currentDigest>[a-f0-9]{40})"
+      ]
+    }
+  ]
+}

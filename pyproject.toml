@@ -1,7 +1,7 @@
 [project]
 name = "snesctl-c"
 version = "0.1.0"
-description = "Add your description here"
+description = "Retrofit SNES controllers with Bluetooth LE (HID gamepad) using a nRF52840 based nice!nano"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

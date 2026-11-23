@@ -5,6 +5,7 @@
 #include <SPI.h>
 
 #include "SNESctl.hpp"
+#include "SNESdecode.hpp"
 
 
 namespace SNESctl {
@@ -42,7 +43,7 @@ namespace SNESctl {
 
     void Controller::printRawButtons(Print& streamer, const uint16_t raw) {
         const auto raw_buttons = ~raw; // invert logic for easier visualization (pressed -> 1, not pressed -> 0)
-        // button order in raw data (Start, Y, Select, B, L, R, X, A, Up, Down, Left, Right)
+        // button order in raw data (B, Y, Start, Select, Up, Down, Left, Right, A, X, L, R, 4x unused)
         constexpr char letters[] = "BYSsudlrAXLR####";
         for (int i=0; i<(sizeof letters - 1); ++i) {
             const auto pressed = bitRead(raw_buttons, i);
@@ -81,30 +82,11 @@ namespace SNESctl {
     }
 
     hid_gamepad_report_t Controller::getGamepadReport() const {
-        auto raw = ~this->readRaw();     // inverted logic
+        const auto state = decode(this->readRaw());
         hid_gamepad_report_t gp{};
-
-        constexpr uint16_t sSYB_button_mask = 0b0000000000001111;   // Start, Select, Y, B
-        constexpr uint16_t RLXA_button_mask = 0b0000111100000000;   // R, L, X, A
-        constexpr uint16_t dpad_button_mask = 0b0000000011110000;   // D-pad: Up, Down, Left, Right
-
-        auto buttons_sSYB = (raw & sSYB_button_mask);
-        auto buttons_RLXA = (raw & RLXA_button_mask) >> 4;
-        auto dpad         = (raw & dpad_button_mask) >> 4;
-
-        gp.buttons = buttons_RLXA | buttons_sSYB;
-
-        auto get_axis = [](bool neg, bool pos) -> int8_t {
-            return (pos - neg) * 127;
-        };
-
-        constexpr uint8_t up      = bit(0);
-        constexpr uint8_t down    = bit(1);
-        constexpr uint8_t left    = bit(2);
-        constexpr uint8_t right   = bit(3);
-
-        gp.x = get_axis(dpad & left, dpad & right);
-        gp.y = get_axis(dpad & up,   dpad & down);    // origin -> upper left
+        gp.buttons = state.buttons;
+        gp.x = state.x;
+        gp.y = state.y;
         return gp;
     }
 }

@@ -53,9 +53,11 @@ SNESctl::Controller snes_controller(
 
 bool connected = false;
 bool battery_sent = false;
+volatile bool system_off_requested = false;
 
 
 void start_advertising();
+void enter_system_off();
 float read_battery_voltage();
 uint8_t read_battery_percentage();
 
@@ -64,10 +66,12 @@ void setup() {
     Serial.begin(115200);
     analogReadResolution(Config::Battery::adc_resolution);
 
-    // Blocking wait for connection when debug mode is enabled via IDE
+#ifdef WAIT_FOR_SERIAL
+    // Blocking wait until the USB serial is opened, to not miss any output. Never use on battery!
     while ( !Serial ) {
         delay(10);
     }
+#endif
     Serial.println("Nice!nano HID (SNES) Gamepad");
     Serial.println("----------------------------\n");
 
@@ -84,6 +88,7 @@ void setup() {
     // Configure and Start Device Information Service
     ble_dis.setManufacturer("DIY Industries");
     ble_dis.setModel("SNESctl");
+    ble_dis.setFirmwareRev(FIRMWARE_VERSION);
     ble_dis.begin();
 
     // Configure and Start Battery Service
@@ -122,6 +127,9 @@ void setup() {
 
 
     report_timer.begin(16, [](TimerHandle_t timer){
+        // done here, so it can not interfere with a controller read in progress
+        if (system_off_requested) enter_system_off();
+
         hid_gamepad_report_t hid_report = snes_controller.getGamepadReport();
         const auto hid_report_sent = ble_gamepad.report(&hid_report);
 #ifdef DEBUG_HID_REPORT
@@ -184,8 +192,17 @@ void start_advertising() {
     Bluefruit.Advertising.setFastTimeout(30);          // number of seconds in fast mode
 
     // stop advertising after 2mins (0 => do not stop)
-    // we do not want to drain the battery if left on pairing
+    // we do not want to drain the battery if left on pairing,
+    // so power down completely, until power cycled (or reset)
+    Bluefruit.Advertising.setStopCallback([]{ system_off_requested = true; });
     Bluefruit.Advertising.start(120);
+}
+
+void enter_system_off() {
+    Serial.println("No connection, entering system off. Power cycle to wake up.");
+    Serial.flush();
+    snes_controller.powerOff();
+    sd_power_system_off();  // does not return, wakes up (= reboots) on reset or plugging in USB
 }
 
 float read_battery_voltage() {

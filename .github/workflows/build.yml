@@ -13,22 +13,40 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: Install task
-        uses: go-task/setup-task@v1
+        uses: go-task/setup-task@v2
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v10.4.0  # no major version tags are published
+        with:
+          enable-cache: true
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v6
+        with:
+          path: |
+            .platformio_core
+            .pio/catch2
+          key: platformio-${{ runner.os }}-${{ hashFiles('platformio.ini', 'test/test_custom_runner.py', 'uv.lock') }}
+          restore-keys: platformio-${{ runner.os }}-
 
       - name: Install dependencies
         run: task setup
+
+      - name: Run unit tests
+        run: task test
 
       - name: Build firmware
         run: task run
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: snesctl-firmware
-          path: .pio/build/nicenano/firmware.*
+          path: |
+            .pio/build/nicenano/firmware.hex
+            .pio/build/nicenano/firmware.uf2
+            .pio/build/nicenano/firmware.zip
+          if-no-files-found: error
