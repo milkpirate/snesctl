@@ -1,0 +1,56 @@
+name: renovate
+
+# manually triggered (self-hosted) Renovate run, config in renovate.json
+on:
+  workflow_dispatch:
+    inputs:
+      ignore-schedule:
+        description: Ignore the nightly schedule of renovate.json (update/automerge right away)
+        type: boolean
+        default: true
+      dry-run:
+        description: Only log what would be done (no branches, PRs or merges)
+        type: boolean
+        default: false
+      log-level:
+        description: Log level
+        type: choice
+        options:
+          - info
+          - debug
+        default: info
+
+concurrency:
+  group: renovate
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      # token of the repo's own GitHub App (see README), as the GITHUB_TOKEN can neither
+      # trigger the CI on Renovate's PRs (needed for automerge) nor update workflow files
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RENOVATE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+
+      # to attribute Renovate's commits to the app's bot user
+      - name: Get app bot user id
+        id: bot-user
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: echo "id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+
+      - name: Renovate
+        uses: renovatebot/github-action@v46.3.14  # no major version tags are published
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_GIT_AUTHOR: ${{ format('{0}[bot] <{1}+{0}[bot]@users.noreply.github.com>', steps.app-token.outputs.app-slug, steps.bot-user.outputs.id) }}
+          RENOVATE_ONBOARDING: "false"
+          RENOVATE_FORCE: ${{ inputs.ignore-schedule && '{"schedule":[],"automergeSchedule":[]}' || '' }}
+          RENOVATE_DRY_RUN: ${{ inputs.dry-run && 'full' || '' }}
+          LOG_LEVEL: ${{ inputs.log-level }}

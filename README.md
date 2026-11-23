@@ -109,6 +109,13 @@ task clean:all  # removes everything generated, incl. PlatformIO and the Python 
 
 Pass additional PlatformIO arguments after `--`, e.g. `task upload -- --upload-port COM5`.
 
+### Dependency updates
+Dependencies (GitHub Actions, Python packages, Catch2 and the nice!nano board files) are kept up to date by
+[Renovate](https://docs.renovatebot.com) (see [`renovate.json`](./renovate.json)): nightly, with minor and patch
+updates merged automatically once the pipeline passes. It can also be run manually via the
+[renovate workflow](https://github.com/milkpirate/snesctl/actions/workflows/renovate.yml), which authenticates
+with a GitHub App of this repository, see the [setup](./docs/renovate.md).
+
 ## Documentation
 For pinouts and timing diagrams please have a look at the [docs](./docs).
 
