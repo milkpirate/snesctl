@@ -5,7 +5,6 @@
 #include <SPI.h>
 
 #include "SNESctl.hpp"
-#include "SNESdecode.hpp"
 
 
 namespace SNESctl {
@@ -13,12 +12,14 @@ namespace SNESctl {
         SPIClass& spi,
         const uint32_t latch,
         const uint32_t vcc,
-        const uint32_t gnd
+        const uint32_t gnd,
+        const uint8_t vcc_on_level
     ) :
         spi_(spi),
         latch_(latch),
         vcc_(vcc),
-        gnd_(gnd)
+        gnd_(gnd),
+        vcc_on_level_(vcc_on_level)
     {}
 
     void Controller::begin() const {
@@ -26,7 +27,9 @@ namespace SNESctl {
     }
 
     void Controller::powerOff() const {
-        pinMode(this->vcc_, INPUT);
+        // actively switch VCC off (floating it might leave it on), the rest is left floating
+        pinMode(this->vcc_, OUTPUT);
+        digitalWrite(this->vcc_, !this->vcc_on_level_);
         pinMode(this->gnd_, INPUT);
         pinMode(this->latch_, INPUT);
     }
@@ -36,14 +39,14 @@ namespace SNESctl {
         pinMode(this->gnd_, OUTPUT);
         pinMode(this->latch_, OUTPUT);
 
-        digitalWrite(this->vcc_, HIGH);
+        digitalWrite(this->vcc_, this->vcc_on_level_);
         digitalWrite(this->gnd_, LOW);
         digitalWrite(this->latch_, LOW);
     }
 
     void Controller::printRawButtons(Print& streamer, const uint16_t raw) {
         const auto raw_buttons = ~raw; // invert logic for easier visualization (pressed -> 1, not pressed -> 0)
-        // button order in raw data (B, Y, Start, Select, Up, Down, Left, Right, A, X, L, R, 4x unused)
+        // button order in raw data (B, Y, Select, Start, Up, Down, Left, Right, A, X, L, R, 4x unused)
         constexpr char letters[] = "BYSsudlrAXLR####";
         for (int i=0; i<(sizeof letters - 1); ++i) {
             const auto pressed = bitRead(raw_buttons, i);
@@ -82,7 +85,10 @@ namespace SNESctl {
     }
 
     hid_gamepad_report_t Controller::getGamepadReport() const {
-        const auto state = decode(this->readRaw());
+        return toGamepadReport(decode(this->readRaw()));
+    }
+
+    hid_gamepad_report_t Controller::toGamepadReport(const GamepadState& state) {
         hid_gamepad_report_t gp{};
         gp.buttons = state.buttons;
         gp.x = state.x;

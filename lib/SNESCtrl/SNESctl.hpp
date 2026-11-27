@@ -7,6 +7,8 @@
 #include <bitset>
 #include <bluefruit.h>
 
+#include "SNESdecode.hpp"
+
 
 namespace SNESctl {
 
@@ -15,7 +17,9 @@ class Controller {
         static void printRawButtons(Print& streamer, const uint16_t raw);
         static void printReport(Print& streamer, const hid_gamepad_report_t& report);
 
-        Controller(SPIClass& spi, const uint32_t latch, const uint32_t vcc, const uint32_t gnd);
+        // `vcc_on_level`: level of the `vcc` pin to power the controller (e.g. the external VCC switch of the
+        // nice!nano, which differs between board revisions)
+        Controller(SPIClass& spi, uint32_t latch, uint32_t vcc, uint32_t gnd, uint8_t vcc_on_level);
 
         void begin() const;
         void powerOff() const;
@@ -25,11 +29,14 @@ class Controller {
         uint16_t readRaw() const;
 
     private:
+        static hid_gamepad_report_t toGamepadReport(const GamepadState& state);
+
         SPIClass& spi_;
 
         const uint32_t latch_;
         const uint32_t vcc_;
         const uint32_t gnd_;
+        const uint8_t vcc_on_level_;
 
         const SPISettings spiSettings_{
             100000,     // SNES controller clock (100 kHz max)

@@ -11,7 +11,7 @@ namespace SNESctl {
     struct GamepadState {
         uint32_t buttons;   // bit 0..7: B, Y, Select, Start, A, X, L, R
         int8_t x;           // D-pad left/right -> -127/127
-        int8_t y;           // D-pad up/down -> -127/127 (origin -> upper left)
+        int8_t y;           // D-pad up/down    -> -127/127 (origin -> upper left)
     };
 
     // `raw` as shifted out by the controller: active low, LSB first in the order
