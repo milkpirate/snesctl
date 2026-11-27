@@ -6,6 +6,8 @@ vars:
   # renovate: datasource=git-refs depName=https://github.com/ICantMakeThings/Nicenano-NRF52-Supermini-PlatformIO-Support branch=main
   NICENANO_REF: b0c15d422f846d5f1fb4b4195ff2f08015f3d236
   NICENANO_URL: https://raw.githubusercontent.com/ICantMakeThings/Nicenano-NRF52-Supermini-PlatformIO-Support/{{ .NICENANO_REF }}/.platformio
+  # board (PlatformIO environment) to upload/debug: supermini, nicenano_v2 or nicenano_v1 (e.g. `task upload BOARD=nicenano_v2`)
+  BOARD: '{{ .BOARD | default "supermini" }}'
 
 tasks:
   .pio:
@@ -16,7 +18,8 @@ tasks:
 
   setup:
     desc: Setup development environment (PlatformIO, platforms, toolchains, frameworks and nice!nano board)
-    deps: [board]
+    deps:
+      - board
     status:
       - test -d .platformio_core/packages/framework-arduinoadafruitnrf52
       - test -d .platformio_core/platforms/native
@@ -37,18 +40,21 @@ tasks:
       - echo "{{ .NICENANO_REF }}" > boards/.ref
 
   run:
-    desc: Build the firmware (.hex, .zip and .uf2)
+    desc: Build the firmware (.hex, .zip and .uf2) for all boards
     # will only build if there are changes in the source files or platformio.ini
     sources:
       - 'boards/**'
+      - 'config/**'
+      - 'include/**'
       - 'lib/**'
       - 'scripts/**'
       - 'src/**'
       - 'variants/**'
       - 'platformio.ini'
     generates:
-      - .pio/build/nicenano/firmware.elf
-      - .pio/build/nicenano/firmware.uf2
+      - .pio/build/supermini/firmware.uf2
+      - .pio/build/nicenano_v1/firmware.uf2
+      - .pio/build/nicenano_v2/firmware.uf2
     cmds:
       - task: setup
       - task: .pio
@@ -56,12 +62,28 @@ tasks:
           args: run
 
   upload:
-    desc: Upload the firmware to the device (via USB serial)
+    desc: Upload the firmware to the device via USB serial (BOARD=supermini|nicenano_v2|nicenano_v1, default supermini)
     cmds:
       - task: run
       - task: .pio
         vars:
-          args: run -t upload
+          args: run -e {{ .BOARD }} -t upload
+
+  probe:
+    desc: Flash a probe firmware that prints the nice!nano revision (watch it with `task monitor`)
+    cmds:
+      - task: setup
+      - task: .pio
+        vars:
+          args: run -e probe -t upload
+
+  vcc-test:
+    desc: Flash a test firmware switching the external VCC on/off every 20s, to measure the leak of its pull-up
+    cmds:
+      - task: setup
+      - task: .pio
+        vars:
+          args: run -e vcc_test -t upload
 
   test:
     desc: Run the unit tests on the host (needs a host C++ compiler, e.g. gcc)
@@ -71,6 +93,14 @@ tasks:
         vars:
           args: test -e native
 
+  coverage:
+    desc: Run the unit tests on the host and create a coverage report (reports/c.cov.html)
+    cmds:
+      - task: test
+      - mkdir -p reports
+      # --delete removes the gathered coverage data, so the next run starts from scratch
+      - uv run gcovr --delete
+
   monitor:
     desc: Open the serial monitor of the device
     cmds:
@@ -79,18 +109,18 @@ tasks:
           args: device monitor
 
   debug:
-    desc: Build a debug firmware and start a GDB session (needs a J-Link)
+    desc: Build a debug firmware and start a GDB session (needs a J-Link, BOARD=..., see upload)
     interactive: true
     cmds:
       - task: setup
       - task: .pio
         vars:
-          args: debug --interface=gdb -- -x .pioinit
+          args: debug -e {{ .BOARD }} --interface=gdb -- -x .pioinit
 
   clean:
     desc: Remove the build artifacts
     cmds:
-      - uv run pio run -t clean -e nicenano -e native
+      - uv run pio run -t clean -e supermini -e nicenano_v1 -e nicenano_v2 -e native
       - rm -rf .task
 
   clean:all:
