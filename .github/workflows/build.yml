@@ -35,8 +35,17 @@ jobs:
       - name: Install dependencies
         run: task setup
 
-      - name: Run unit tests
-        run: task test
+      - name: Run unit tests (with coverage)
+        run: task coverage
+
+      - name: Add coverage to the job summary
+        run: cat reports/c.cov.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: reports/
 
       - name: Build firmware
         run: task run
@@ -46,7 +55,17 @@ jobs:
         with:
           name: snesctl-firmware
           path: |
-            .pio/build/nicenano/firmware.hex
-            .pio/build/nicenano/firmware.uf2
-            .pio/build/nicenano/firmware.zip
+            .pio/build/*/firmware.hex
+            .pio/build/*/firmware.uf2
+            .pio/build/*/firmware.zip
           if-no-files-found: error
+
+      # the following builds are not uploaded, they only make sure everything still compiles. They run after
+      # uploading the artifacts, as they rebuild the firmware.
+      - name: Build firmware with debug output
+        env:
+          PLATFORMIO_BUILD_FLAGS: -DDEBUG_HID_REPORT -DDEBUG_BATTERY_REPORT
+        run: uv run pio run
+
+      - name: Build tools (board probe, VCC test)
+        run: uv run pio run -e probe -e vcc_test
